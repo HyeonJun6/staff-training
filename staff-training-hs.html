@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>교직원 연수 모둠 배정</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
+
+    <!-- 상단 헤더 -->
+    <header class="bg-indigo-600 text-white shadow-md p-4 flex justify-between items-center">
+        <div>
+            <h1 class="text-xl md:text-2xl font-bold">🏫 교직원 연수 모둠 배정</h1>
+            <p class="text-xs text-indigo-200 mt-1" id="modeIndicator">현재 모드: 선착순 자동 배정</p>
+        </div>
+        <button onclick="openAdminModal()" class="bg-indigo-700 hover:bg-indigo-800 text-xs md:text-sm py-2 px-3 rounded shadow transition">
+            ⚙️ 관리자 모드
+        </button>
+    </header>
+
+    <main class="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+
+        <!-- 연수 개요 배너 (가독성 높은 흰색 카드 스타일) -->
+        <section class="bg-white text-slate-800 p-5 rounded-2xl shadow-md border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <span class="bg-indigo-600 text-white text-xs px-3 py-1 rounded-full font-bold tracking-wide">연수 안내</span>
+                <h2 class="text-xl md:text-2xl font-bold mt-2 text-indigo-950" id="displayTrainingTitle">2026학년도 교직원 연수</h2>
+            </div>
+            <div class="flex flex-wrap md:flex-nowrap gap-4 md:gap-6 text-sm text-slate-700 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <div class="flex items-center gap-2">
+                    <span class="text-indigo-600 font-bold">📅 일시:</span>
+                    <strong class="text-slate-900 font-semibold" id="displayTrainingDatetime">2026-09-16(수) 14:00</strong>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-indigo-600 font-bold">📍 장소:</span>
+                    <strong class="text-slate-900 font-semibold" id="displayTrainingLocation">시청각실</strong>
+                </div>
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- 왼쪽: 교사 신청 폼 -->
+            <section class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                <h2 class="text-lg font-bold text-indigo-900 border-b pb-2 mb-4">✍️ 모둠 신청하기</h2>
+                
+                <form id="submitForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">성명 선택 및 입력 (가나다순)</label>
+                        <input type="text" id="teacherName" list="teacherDatalist" placeholder="이름을 선택하거나 입력하세요" required
+                            class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <datalist id="teacherDatalist">
+                            <!-- 가나다 순으로 정렬된 교직원 명단이 동적 삽입됩니다 -->
+                        </datalist>
+                    </div>
+
+                    <!-- 희망 모둠 선택 -->
+                    <div id="groupSelectContainer" class="hidden">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">희망 모둠 선택</label>
+                        <select id="groupSelect" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                            <!-- Dynamic group options -->
+                        </select>
+                    </div>
+
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg shadow transition">
+                        신청하기
+                    </button>
+                </form>
+            </section>
+
+            <!-- 오른쪽: 모둠별 배치현황 -->
+            <section class="md:col-span-2 space-y-4">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-lg font-bold text-slate-800">📌 모둠 배치 현황</h2>
+                    <span class="text-xs text-slate-500" id="totalCount">총 신청자: 0명</span>
+                </div>
+
+                <div id="groupsDisplay" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Dynamic groups -->
+                </div>
+            </section>
+        </div>
+
+    </main>
+
+    <!-- 관리자 인증 모달 -->
+    <div id="adminAuthModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+            <h3 class="text-lg font-bold mb-4">🔒 관리자 암호 입력</h3>
+            <input type="password" id="adminPassword" placeholder="암호를 입력하세요" class="w-full p-2 border rounded mb-4">
+            <div class="flex justify-end space-x-2">
+                <button onclick="closeAdminAuthModal()" class="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded">취소</button>
+                <button onclick="verifyAdmin()" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 관리자 설정 패널 모달 -->
+    <div id="adminPanelModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div class="bg-white rounded-xl p-6 w-full max-w-3xl shadow-xl space-y-4 my-8">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="text-xl font-bold text-indigo-900">⚙️ 관리자 제어판</h3>
+                <button onclick="closeAdminPanelModal()" class="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            <div class="flex border-b text-sm font-semibold">
+                <button id="tabBtn1" onclick="switchAdminTab(1)" class="py-2 px-4 border-b-2 border-indigo-600 text-indigo-600">⚙️ 연수 및 배정 설정</button>
+                <button id="tabBtn2" onclick="switchAdminTab(2)" class="py-2 px-4 text-slate-500 hover:text-indigo-600">📋 교직원 명단 관리</button>
+                <button id="tabBtn3" onclick="switchAdminTab(3)" class="py-2 px-4 text-slate-500 hover:text-indigo-600">👥 신청자 관리</button>
+            </div>
+
+            <!-- 탭 1: 연수 개요 & 배정 설정 -->
+            <div id="adminTab1" class="space-y-5 pt-2">
+                <div class="bg-slate-50 p-4 rounded-xl border space-y-3">
+                    <h4 class="font-bold text-sm text-indigo-900">📌 연수 정보 설정 (메인 화면에 표시됨)</h4>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">연수명</label>
+                        <input type="text" id="cfgTrainingTitle" placeholder="예: 2026학년도 교직원 역량강화 연수" class="w-full p-2 border rounded text-sm">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold mb-1">연수 일시</label>
+                            <input type="text" id="cfgTrainingDatetime" placeholder="예: 2026-09-16(수) 14:00" class="w-full p-2 border rounded text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold mb-1">연수 장소</label>
+                            <input type="text" id="cfgTrainingLocation" placeholder="예: 시청각실" class="w-full p-2 border rounded text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-semibold mb-2 text-sm text-slate-700">배정 방식 설정</label>
+                    <div class="flex gap-4">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="assignMode" value="auto" checked>
+                            <span>⚡ 선착순 자동 배정</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="assignMode" value="choice">
+                            <span>🙋‍♂️ 교사 직접 선택</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">모둠 개수 (N)</label>
+                        <input type="number" id="cfgGroupCount" value="4" min="1" max="20" class="w-full p-2 border rounded">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">모둠당 최대 인원</label>
+                        <input type="number" id="cfgGroupCap" value="13" min="1" class="w-full p-2 border rounded">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold mb-2">모둠 이름 개별 지정</label>
+                    <div id="groupNamesConfig" class="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2 border rounded bg-slate-50">
+                        <!-- Dynamic group name inputs -->
+                    </div>
+                </div>
+
+                <div class="border-t pt-4 flex justify-between items-center">
+                    <button onclick="resetSubmissions()" class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded text-sm">
+                        🗑️ 신청 데이터 전체 초기화
+                    </button>
+                    <button onclick="saveAdminSettings()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold">
+                        설정 저장
+                    </button>
+                </div>
+            </div>
+
+            <!-- 탭 2: 교직원 명단 관리 -->
+            <div id="adminTab2" class="hidden space-y-4 pt-2">
+                <div class="flex flex-wrap justify-between items-center gap-2 bg-slate-50 p-3 rounded-lg border">
+                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                        <input type="text" id="newTeacherInput" placeholder="새 교직원 성명" class="p-2 border rounded text-sm">
+                        <button onclick="addTeacherToMaster()" class="px-3 py-2 bg-indigo-600 text-white rounded text-sm font-semibold hover:bg-indigo-700">
+                            + 교사 추가
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-500">정렬:</span>
+                        <select id="teacherSortOrder" onchange="renderMasterTeacherList()" class="p-1.5 border rounded text-sm">
+                            <option value="asc">가나다순</option>
+                            <option value="desc">가나다 역순</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-1 text-xs border-b pb-2" id="chosungButtons">
+                    <!-- 초성 필터 버튼 동적 생성 -->
+                </div>
+
+                <div class="flex justify-between text-xs text-slate-500">
+                    <span id="masterTeacherCount">총 0명</span>
+                </div>
+                <div id="masterTeacherListGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-60 overflow-y-auto p-2 border rounded bg-white">
+                    <!-- 교사 목록 칩 -->
+                </div>
+            </div>
+
+            <!-- 탭 3: 신청자 관리 -->
+            <div id="adminTab3" class="hidden space-y-4 pt-2">
+                <div class="max-h-80 overflow-y-auto border rounded bg-white">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-slate-100 border-b text-xs text-slate-600 uppercase">
+                            <tr>
+                                <th class="p-2.5">성명</th>
+                                <th class="p-2.5">신청 시각</th>
+                                <th class="p-2.5">배정/선택 모둠</th>
+                                <th class="p-2.5 text-right">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="applicantTableBody" class="divide-y">
+                            <!-- 신청자 목록 동적 삽입 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 스크립트 로직 -->
+    <script>
+        // ==========================================
+        // 1. FIREBASE 데이터베이스 설정
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyBNh84vdvxwjyqyDc5KqlW_JAKL1n31vJ0",
+            authDomain: "staff-training-hs.firebaseapp.com",
+            databaseURL: "https://staff-training-hs-default-rtdb.firebaseio.com",
+            projectId: "staff-training-hs",
+            storageBucket: "staff-training-hs.firebasestorage.app",
+            messagingSenderId: "766786202698",
+            appId: "1:766786202698:web:d755d9d8507abd18e48ab3"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // 초기 기본 교직원 명단
+        const initialTeacherMaster = [
+            "박정기", "서승안", "강래명", "박철규", "조정혜", "김병준", "김기완", "황현경", "홍현선", "박수선",
+            "김성호", "김양현", "정혜섭", "이태영", "권희진", "정주영", "박보라", "이경민", "김승권", "노정은",
+            "박은혜", "임태관", "신지현", "박신영", "윤해님", "정광진", "방형협", "김유미", "최종문", "송제택",
+            "장금주", "이미정", "이우선", "김대현", "강보람", "윤혜경", "신현준", "이영민", "유석만", "이승영",
+            "김성현", "임준", "백승혁", "이지호", "김수연", "정은영", "황현지", "박지원", "안정애", "지정민",
+            "김가영", "배현주", "임은실", "정혜진", "김보경", "김소연", "정다운", "이은재", "오송이", "이재현", "정소은"
+        ];
+
+        // ==========================================
+        // 2. 기본 상태 구조
+        // ==========================================
+        let state = {
+            settings: {
+                trainingTitle: "2026학년도 교직원 연수",
+                trainingDatetime: "2026-09-16(수) 14:00",
+                trainingLocation: "시청각실",
+                mode: "auto",
+                groupCount: 4,
+                groupCapacity: 13,
+                groupNames: ["1모둠", "2모둠", "3모둠", "4모둠"]
+            },
+            teacherList: [],
+            submissions: []
+        };
+
+        let selectedChosungFilter = '전체';
+
+        // ==========================================
+        // 3. 실시간 데이터 동기화
+        // ==========================================
+        function initDataSync() {
+            db.ref('app_state').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    state = data;
+                    if (!state.submissions) state.submissions = [];
+                    if (!state.settings.groupNames) state.settings.groupNames = [];
+                    if (!state.teacherList || state.teacherList.length === 0) {
+                        state.teacherList = [...initialTeacherMaster];
+                        syncData();
+                    }
+                } else {
+                    state.teacherList = [...initialTeacherMaster];
+                    syncData();
+                }
+                renderUI();
+                renderMasterTeacherList();
+                renderApplicantTable();
+            });
+        }
+
+        function syncData() {
+            db.ref('app_state').set(state);
+        }
+
+        // ==========================================
+        // 4. 유틸리티 함수
+        // ==========================================
+        function getChosung(str) {
+            const chosungList = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+            const charCode = str.charCodeAt(0) - 0xAC00;
+            if (charCode < 0 || charCode > 11172) return str.charAt(0);
+            return chosungList[Math.floor(charCode / 588)];
+        }
+
+        function getFormattedDate(d = new Date()) {
+            const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const date = String(d.getDate()).padStart(2, '0');
+            const day = weekDays[d.getDay()];
+            const hours = String(d.getHours()).padStart(2, '0');
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            const seconds = String(d.getSeconds()).padStart(2, '0');
+            return `${year}-${month}-${date}(${day}) ${hours}:${minutes}:${seconds}`;
+        }
+
+        // ==========================================
+        // 5. 신청 등록 로직
+        // ==========================================
+        document.getElementById('submitForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const nameInput = document.getElementById('teacherName');
+            const name = nameInput.value.trim();
+
+            if (!name) return;
+
+            const alreadySubmitted = state.submissions.some(s => s.name === name);
+            if (alreadySubmitted) {
+                alert('이미 모둠 신청을 하셨습니다.');
+                return;
+            }
+
+            const now = new Date();
+            const newSubmission = {
+                name: name,
+                timestamp: now.getTime(),
+                formattedTime: getFormattedDate(now),
+                chosenGroup: state.settings.mode === 'choice' ? parseInt(document.getElementById('groupSelect').value) : null
+            };
+
+            state.submissions.push(newSubmission);
+            syncData();
+
+            nameInput.value = '';
+            alert(`${name} 선생님, 신청이 완료되었습니다.`);
+        });
+
+        // ==========================================
+        // 6. 메인 화면 UI 렌더링
+        // ==========================================
+        function renderUI() {
+            const { mode, groupCount, groupCapacity, groupNames, trainingTitle, trainingDatetime, trainingLocation } = state.settings;
+
+            // 1) 연수 정보 표시
+            document.getElementById('displayTrainingTitle').textContent = trainingTitle || '2026학년도 교직원 연수';
+            document.getElementById('displayTrainingDatetime').textContent = trainingDatetime || '2026-09-16(수) 14:00';
+            document.getElementById('displayTrainingLocation').textContent = trainingLocation || '시청각실';
+
+            // 2) 교사 선택 드롭다운 (가나다순 정렬)
+            const sortedTeachers = [...state.teacherList].sort((a, b) => a.localeCompare(b, 'ko'));
+            const datalist = document.getElementById('teacherDatalist');
+            datalist.innerHTML = sortedTeachers.map(t => `<option value="${t}">`).join('');
+
+            // 3) 상단 모드 표시
+            document.getElementById('modeIndicator').textContent = 
+                `현재 모드: ${mode === 'auto' ? '⚡ 선착순 자동 배정' : '🙋‍♂️ 희망 모둠 자율 선택'}`;
+
+            // 4) 교사 자율 선택 모드 UI
+            const choiceContainer = document.getElementById('groupSelectContainer');
+            const groupSelect = document.getElementById('groupSelect');
+            if (mode === 'choice') {
+                choiceContainer.classList.remove('hidden');
+                groupSelect.innerHTML = groupNames.map((name, idx) => {
+                    const count = state.submissions.filter(s => s.chosenGroup === idx).length;
+                    const isFull = count >= groupCapacity;
+                    return `<option value="${idx}" ${isFull ? 'disabled' : ''}>${name} (${count}/${groupCapacity}명)</option>`;
+                }).join('');
+            } else {
+                choiceContainer.classList.add('hidden');
+            }
+
+            // 5) 신청자 현황
+            const sortedSubmissions = [...state.submissions].sort((a, b) => a.timestamp - b.timestamp);
+            document.getElementById('totalCount').textContent = `총 신청자: ${sortedSubmissions.length}명`;
+
+            // 6) 모둠 데이터 구성
+            const groupBuckets = Array.from({ length: groupCount }, () => []);
+
+            if (mode === 'auto') {
+                sortedSubmissions.forEach((item, index) => {
+                    let targetGroupIndex = Math.floor(index / groupCapacity);
+                    if (targetGroupIndex >= groupCount) targetGroupIndex = groupCount - 1;
+                    groupBuckets[targetGroupIndex].push(item);
+                });
+            } else {
+                sortedSubmissions.forEach(item => {
+                    if (item.chosenGroup !== null && item.chosenGroup < groupCount) {
+                        groupBuckets[item.chosenGroup].push(item);
+                    }
+                });
+            }
+
+            // 7) 모둠 카드 출력
+            const display = document.getElementById('groupsDisplay');
+            display.innerHTML = '';
+
+            for (let i = 0; i < groupCount; i++) {
+                const name = groupNames[i] || `${i + 1}모둠`;
+                const members = groupBuckets[i];
+
+                let membersHTML = members.map((m, idx) => `
+                    <li class="flex justify-between items-center py-1.5 border-b border-slate-100 text-sm">
+                        <span class="font-medium text-slate-700">${idx + 1}. ${m.name}</span>
+                        <span class="text-[11px] text-gray-400 font-mono">${m.formattedTime}</span>
+                    </li>
+                `).join('');
+
+                if (members.length === 0) {
+                    membersHTML = `<li class="text-xs text-slate-400 py-4 text-center">신청자가 없습니다.</li>`;
+                }
+
+                display.innerHTML += `
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                        <div class="flex justify-between items-center border-b pb-2 mb-3">
+                            <h3 class="font-bold text-indigo-900">${name}</h3>
+                            <span class="text-xs px-2 py-0.5 rounded-full font-semibold ${members.length >= groupCapacity ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}">
+                                ${members.length} / ${groupCapacity}명
+                            </span>
+                        </div>
+                        <ul class="divide-y divide-slate-100">
+                            ${membersHTML}
+                        </ul>
+                    </div>
+                `;
+            }
+        }
+
+        // ==========================================
+        // 7. 관리자 기능 & 탭 조작
+        // ==========================================
+        function openAdminModal() {
+            document.getElementById('adminAuthModal').classList.remove('hidden');
+        }
+
+        function closeAdminAuthModal() {
+            document.getElementById('adminAuthModal').classList.add('hidden');
+            document.getElementById('adminPassword').value = '';
+        }
+
+        function verifyAdmin() {
+            const pwd = document.getElementById('adminPassword').value;
+            if (pwd === "1954") {
+                closeAdminAuthModal();
+                openAdminPanelModal();
+            } else {
+                alert('암호가 올바르지 않습니다.');
+            }
+        }
+
+        function openAdminPanelModal() {
+            document.getElementById('adminPanelModal').classList.remove('hidden');
+            
+            document.getElementById('cfgTrainingTitle').value = state.settings.trainingTitle || '';
+            document.getElementById('cfgTrainingDatetime').value = state.settings.trainingDatetime || '';
+            document.getElementById('cfgTrainingLocation').value = state.settings.trainingLocation || '';
+            
+            document.querySelector(`input[name="assignMode"][value="${state.settings.mode}"]`).checked = true;
+            document.getElementById('cfgGroupCount').value = state.settings.groupCount;
+            document.getElementById('cfgGroupCap').value = state.settings.groupCapacity;
+            
+            renderAdminGroupInputs();
+            renderChosungButtons();
+            renderMasterTeacherList();
+            renderApplicantTable();
+            switchAdminTab(1);
+        }
+
+        function closeAdminPanelModal() {
+            document.getElementById('adminPanelModal').classList.add('hidden');
+        }
+
+        function switchAdminTab(tabIdx) {
+            [1, 2, 3].forEach(i => {
+                const tabEl = document.getElementById(`adminTab${i}`);
+                const btnEl = document.getElementById(`tabBtn${i}`);
+                if (i === tabIdx) {
+                    tabEl.classList.remove('hidden');
+                    btnEl.className = "py-2 px-4 border-b-2 border-indigo-600 text-indigo-600 font-bold";
+                } else {
+                    tabEl.classList.add('hidden');
+                    btnEl.className = "py-2 px-4 text-slate-500 hover:text-indigo-600 font-normal";
+                }
+            });
+        }
+
+        // ==========================================
+        // 8. 연수 및 배정 설정 저장
+        // ==========================================
+        document.getElementById('cfgGroupCount').addEventListener('change', renderAdminGroupInputs);
+
+        function renderAdminGroupInputs() {
+            const count = parseInt(document.getElementById('cfgGroupCount').value) || 1;
+            const container = document.getElementById('groupNamesConfig');
+            container.innerHTML = '';
+
+            for (let i = 0; i < count; i++) {
+                const existingName = state.settings.groupNames[i] || `${i + 1}모둠`;
+                container.innerHTML += `
+                    <div class="flex items-center gap-1">
+                        <span class="text-xs text-slate-500 w-12">${i + 1}모둠:</span>
+                        <input type="text" class="grp-name-input border text-sm p-1 rounded w-full" value="${existingName}">
+                    </div>
+                `;
+            }
+        }
+
+        function saveAdminSettings() {
+            const tTitle = document.getElementById('cfgTrainingTitle').value.trim();
+            const tDatetime = document.getElementById('cfgTrainingDatetime').value.trim();
+            const tLocation = document.getElementById('cfgTrainingLocation').value.trim();
+
+            const selectedMode = document.querySelector('input[name="assignMode"]:checked').value;
+            const groupCount = parseInt(document.getElementById('cfgGroupCount').value);
+            const groupCap = parseInt(document.getElementById('cfgGroupCap').value);
+            
+            const nameInputs = document.querySelectorAll('.grp-name-input');
+            const groupNames = Array.from(nameInputs).map((input, idx) => input.value.trim() || `${idx + 1}모둠`);
+
+            if (selectedMode !== state.settings.mode && state.submissions.length > 0) {
+                if (confirm('배정 방식이 변경되었습니다. 기존 신청자 명단을 초기화하시겠습니까?')) {
+                    state.submissions = [];
+                }
+            }
+
+            state.settings = {
+                trainingTitle: tTitle,
+                trainingDatetime: tDatetime,
+                trainingLocation: tLocation,
+                mode: selectedMode,
+                groupCount: groupCount,
+                groupCapacity: groupCap,
+                groupNames: groupNames
+            };
+
+            syncData();
+            closeAdminPanelModal();
+            alert('설정이 저장되었습니다.');
+        }
+
+        function resetSubmissions() {
+            if (confirm('모든 교직원의 모둠 신청 내역을 초기화하시겠습니까?')) {
+                state.submissions = [];
+                syncData();
+                renderApplicantTable();
+                alert('초기화되었습니다.');
+            }
+        }
+
+        // ==========================================
+        // 9. 교직원 명단 관리
+        // ==========================================
+        function renderChosungButtons() {
+            const chosungs = ['전체', 'ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+            const container = document.getElementById('chosungButtons');
+            container.innerHTML = chosungs.map(c => `
+                <button onclick="setChosungFilter('${c}')" class="px-2 py-1 rounded ${selectedChosungFilter === c ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}">
+                    ${c}
+                </button>
+            `).join('');
+        }
+
+        function setChosungFilter(chosung) {
+            selectedChosungFilter = chosung;
+            renderChosungButtons();
+            renderMasterTeacherList();
+        }
+
+        function renderMasterTeacherList() {
+            const sortOrder = document.getElementById('teacherSortOrder').value;
+            let list = [...state.teacherList];
+
+            if (selectedChosungFilter !== '전체') {
+                const map = { 'ㄱ': ['ㄱ', 'ㄲ'], 'ㄷ': ['ㄷ', 'ㄸ'], 'ㅂ': ['ㅂ', 'ㅃ'], 'ㅅ': ['ㅅ', 'ㅆ'], 'ㅈ': ['ㅈ', 'ㅉ'] };
+                const targets = map[selectedChosungFilter] || [selectedChosungFilter];
+                list = list.filter(name => targets.includes(getChosung(name)));
+            }
+
+            list.sort((a, b) => sortOrder === 'asc' ? a.localeCompare(b, 'ko') : b.localeCompare(a, 'ko'));
+
+            document.getElementById('masterTeacherCount').textContent = `표시 중: ${list.length}명 / 전체: ${state.teacherList.length}명`;
+
+            const grid = document.getElementById('masterTeacherListGrid');
+            grid.innerHTML = list.map(name => `
+                <div class="flex justify-between items-center p-1.5 bg-slate-50 border rounded text-xs">
+                    <span class="font-medium text-slate-700">${name}</span>
+                    <button onclick="removeTeacherFromMaster('${name}')" class="text-red-400 hover:text-red-600 font-bold px-1">✕</button>
+                </div>
+            `).join('');
+        }
+
+        function addTeacherToMaster() {
+            const input = document.getElementById('newTeacherInput');
+            const name = input.value.trim();
+            if (!name) return;
+
+            if (state.teacherList.includes(name)) {
+                alert('이미 등록된 교사 명단입니다.');
+                return;
+            }
+
+            state.teacherList.push(name);
+            syncData();
+            input.value = '';
+            renderMasterTeacherList();
+        }
+
+        function removeTeacherFromMaster(name) {
+            if (confirm(`'${name}' 선생님을 교직원 명단에서 삭제하시겠습니까?`)) {
+                state.teacherList = state.teacherList.filter(t => t !== name);
+                syncData();
+                renderMasterTeacherList();
+            }
+        }
+
+        // ==========================================
+        // 10. 신청자 관리
+        // ==========================================
+        function renderApplicantTable() {
+            const tbody = document.getElementById('applicantTableBody');
+            if (state.submissions.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-xs text-slate-400">신청자가 없습니다.</td></tr>`;
+                return;
+            }
+
+            const sorted = [...state.submissions].sort((a, b) => a.timestamp - b.timestamp);
+            
+            tbody.innerHTML = sorted.map((s, idx) => {
+                let groupLabel = "자동 배정";
+                if (state.settings.mode === 'choice' && s.chosenGroup !== null) {
+                    groupLabel = state.settings.groupNames[s.chosenGroup] || `${s.chosenGroup + 1}모둠`;
+                }
+
+                return `
+                    <tr class="hover:bg-slate-50 text-xs">
+                        <td class="p-2.5 font-bold text-slate-700">${s.name}</td>
+                        <td class="p-2.5 font-mono text-slate-500">${s.formattedTime}</td>
+                        <td class="p-2.5"><span class="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded">${groupLabel}</span></td>
+                        <td class="p-2.5 text-right space-x-1">
+                            <button onclick="editApplicant('${s.name}')" class="px-2 py-1 bg-amber-500 text-white rounded text-[11px]">수정</button>
+                            <button onclick="deleteApplicant('${s.name}')" class="px-2 py-1 bg-red-500 text-white rounded text-[11px]">삭제</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function editApplicant(originalName) {
+            const app = state.submissions.find(s => s.name === originalName);
+            if (!app) return;
+
+            const newName = prompt('수정할 교사 이름을 입력하세요:', app.name);
+            if (!newName || !newName.trim()) return;
+
+            app.name = newName.trim();
+
+            if (state.settings.mode === 'choice') {
+                const groupOpts = state.settings.groupNames.map((n, i) => `${i + 1}: ${n}`).join('\n');
+                const chosen = prompt(`이동할 모둠 번호를 입력하세요:\n${groupOpts}`, (app.chosenGroup !== null ? app.chosenGroup + 1 : 1));
+                if (chosen && !isNaN(chosen)) {
+                    const groupIdx = parseInt(chosen) - 1;
+                    if (groupIdx >= 0 && groupIdx < state.settings.groupCount) {
+                        app.chosenGroup = groupIdx;
+                    }
+                }
+            }
+
+            syncData();
+            renderApplicantTable();
+            alert('수정되었습니다.');
+        }
+
+        function deleteApplicant(name) {
+            if (confirm(`'${name}' 선생님의 신청 내역을 삭제하시겠습니까?`)) {
+                state.submissions = state.submissions.filter(s => s.name !== name);
+                syncData();
+                renderApplicantTable();
+            }
+        }
+
+        window.onload = () => {
+            initDataSync();
+        };
+    </script>
+</body>
+</html>
